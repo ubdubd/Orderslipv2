@@ -71,21 +71,27 @@ jobs:
           echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
           grep -nE "versionCode|versionName" app/build.gradle
 
-      - name: Generate release keystore
-        working-directory: project/OrderSlipAndroid/app
+      - name: Restore or generate keystore
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
-          keytool -genkeypair -v \
-            -keystore release-key.jks \
-            -alias "$KEY_ALIAS" \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass "$KEYSTORE_PASSWORD" \
-            -keypass "$KEYSTORE_PASSWORD" \
-            -dname "CN=OrderSlip, OU=OrderSlip, O=OrderSlip, L=Kerala, S=Kerala, C=IN"
-          test -s release-key.jks
-          echo "Keystore created successfully."
+          if [ -f "release-key.jks" ]; then
+            echo "Existing keystore found in repo — reusing it."
+            cp release-key.jks project/OrderSlipAndroid/app/release-key.jks
+          else
+            echo "No keystore in repo — generating a new one (first time only)."
+            keytool -genkeypair -v \
+              -keystore project/OrderSlipAndroid/app/release-key.jks \
+              -alias "$KEY_ALIAS" \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$KEYSTORE_PASSWORD" \
+              -keypass "$KEYSTORE_PASSWORD" \
+              -dname "CN=OrderSlip, OU=OrderSlip, O=OrderSlip, L=Kerala, S=Kerala, C=IN"
+            cp project/OrderSlipAndroid/app/release-key.jks release-key.jks
+          fi
+          test -s project/OrderSlipAndroid/app/release-key.jks
+          echo "Keystore ready."
 
       - name: Configure release signing
         working-directory: project/OrderSlipAndroid
@@ -134,11 +140,18 @@ jobs:
           cp project/OrderSlipAndroid/app/build/outputs/apk/release/app-release.apk OrderSlip.apk
           ls -lh OrderSlip.apk
 
-      - name: Save keystore as artifact (backup - keep safe!)
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-keystore-backup
-          path: project/OrderSlipAndroid/app/release-key.jks
+      - name: Commit keystore to repo (first time only)
+        run: |
+          if [ -n "$(git status --porcelain release-key.jks)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add release-key.jks
+            git commit -m "Add release signing keystore (auto-generated)"
+            git push
+            echo "Keystore committed to repo — future builds will reuse it."
+          else
+            echo "Keystore already in repo — nothing to commit."
+          fi
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
