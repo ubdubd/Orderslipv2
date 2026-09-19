@@ -22,11 +22,8 @@ jobs:
             ls -R | head -100
             exit 1
           fi
-
           echo "Using: $ZIP"
           unzip -o "$ZIP" -d project
-
-          test -f project/OrderSlipAndroid/gradlew || true
           ls -la project/OrderSlipAndroid
 
       - name: Set up Java
@@ -53,12 +50,8 @@ jobs:
         working-directory: project/OrderSlipAndroid
         run: |
           touch gradle.properties
-          grep -q "android.useAndroidX" gradle.properties || \
-            echo "android.useAndroidX=true" >> gradle.properties
-
-          grep -q "android.enableJetifier" gradle.properties || \
-            echo "android.enableJetifier=true" >> gradle.properties
-
+          grep -q "android.useAndroidX" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
+          grep -q "android.enableJetifier" gradle.properties || echo "android.enableJetifier=true" >> gradle.properties
           cat gradle.properties
 
       - name: Set compileSdk 35
@@ -67,28 +60,34 @@ jobs:
           sed -i -E 's/compileSdk(Version)?[ =]+[0-9]+/compileSdk 35/' app/build.gradle
           grep -n "compileSdk" app/build.gradle
 
-      - name: Set version 3.0.0
+      - name: Set version
         working-directory: project/OrderSlipAndroid
         run: |
-          sed -i -E 's/versionCode[ =]+[0-9]+/versionCode 3/' app/build.gradle
-          sed -i -E 's/versionName[ =]+"[^"]+"/versionName "3.0.0"/' app/build.gradle
-
-          echo "Version settings:"
+          VERSION_CODE=${{ github.run_number }}
+          VERSION_NAME="3.0.$VERSION_CODE"
+          sed -i -E "s/versionCode[ =]+[0-9]+/versionCode $VERSION_CODE/" app/build.gradle
+          sed -i -E "s/versionName[ =]+\"[^\"]+\"/versionName \"$VERSION_NAME\"/" app/build.gradle
+          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
           grep -nE "versionCode|versionName" app/build.gradle
 
-      - name: Decode signing key
+      - name: Generate release keystore
+        working-directory: project/OrderSlipAndroid/app
         env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 --decode > project/OrderSlipAndroid/app/release-key.jks
-          test -s project/OrderSlipAndroid/app/release-key.jks
+          keytool -genkeypair -v \
+            -keystore release-key.jks \
+            -alias "$KEY_ALIAS" \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -keypass "$KEYSTORE_PASSWORD" \
+            -dname "CN=OrderSlip, OU=OrderSlip, O=OrderSlip, L=Kerala, S=Kerala, C=IN"
+          test -s release-key.jks
           echo "Keystore created successfully."
 
       - name: Configure release signing
         working-directory: project/OrderSlipAndroid
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -109,31 +108,18 @@ jobs:
           '''
 
           if "signingConfigs {" not in s:
-              s = s.replace(
-                  "android {",
-                  "android {" + signing_block,
-                  1
-              )
+              s = s.replace("android {", "android {" + signing_block, 1)
 
           if "signingConfig signingConfigs.release" not in s:
-              pattern = r'(buildTypes\\s*\\{\\s*release\\s*\\{)'
-              s, count = re.subn(
-                  pattern,
-                  r'\\1\n            signingConfig signingConfigs.release',
-                  s,
-                  count=1
-              )
-
+              pattern = r'(buildTypes\s*\{\s*release\s*\{)'
+              s, count = re.subn(pattern, r'\1\n            signingConfig signingConfigs.release', s, count=1)
               if count == 0:
                   raise SystemExit("Could not find release buildType")
 
           p.write_text(s)
           PY
-
           echo "Signing configuration:"
           grep -n -A10 -B2 "signingConfigs" app/build.gradle
-          echo "Release build type:"
-          grep -n -A8 "release {" app/build.gradle | head -20
 
       - name: Build signed release APK
         working-directory: project/OrderSlipAndroid
@@ -149,16 +135,22 @@ jobs:
           cp project/OrderSlipAndroid/app/build/outputs/apk/release/app-release.apk OrderSlip.apk
           ls -lh OrderSlip.apk
 
+      - name: Save keystore as artifact (backup - keep safe!)
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-keystore-backup
+          path: project/OrderSlipAndroid/app/release-key.jks
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OrderSlip-APK-v3.0.0
+          name: OrderSlip-APK
           path: OrderSlip.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.0.0
-          name: OrderSlip v3.0.0
+          tag_name: v${{ env.VERSION_NAME }}
+          name: OrderSlip v${{ env.VERSION_NAME }}
           generate_release_notes: true
           files: OrderSlip.apk
