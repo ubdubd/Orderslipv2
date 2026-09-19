@@ -11,17 +11,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Find Android project
+      - name: Extract Android project
         run: |
-          PROJECT_DIR=$(find . -name settings.gradle -o -name settings.gradle.kts | head -n 1 | xargs -r dirname)
-
-          if [ -z "$PROJECT_DIR" ] || [ "$PROJECT_DIR" = "." ]; then
-            echo "Android project not found"
-            exit 1
-          fi
-
-          echo "Android project found at: $PROJECT_DIR"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+          unzip -o OrderSlipAndroid_AutoUpdate_Fixed.zip -d project
+          echo "Extracted files:"
+          find project -maxdepth 3 -type f | head -100
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -33,7 +27,7 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Build APK
-        working-directory: ${{ env.PROJECT_DIR }}
+        working-directory: project/OrderSlipAndroid
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
@@ -42,4 +36,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: OrderSlip-APK
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk        
+          path: project/OrderSlipAndroid/app/build/outputs/apk/debug/app-debug.apk
