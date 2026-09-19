@@ -15,9 +15,6 @@ jobs:
         run: |
           unzip -o OrderSlipAndroid_AutoUpdate_Fixed.zip -d project
 
-          echo "=== Searching for gradlew ==="
-          find project -type f -name "gradlew" -print
-
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -27,27 +24,24 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Find and Build APK
+      - name: Install Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Generate Gradle Wrapper
+        working-directory: project/OrderSlipAndroid
         run: |
-          GRADLEW=$(find project -type f -name "gradlew" | head -1)
-
-          if [ -z "$GRADLEW" ]; then
-            echo "ERROR: gradlew was not found in the extracted project."
-            echo "Project structure:"
-            find project -maxdepth 5 -type f | sort
-            exit 1
-          fi
-
-          echo "Found Gradle wrapper: $GRADLEW"
-
-          PROJECT_DIR=$(dirname "$GRADLEW")
-          cd "$PROJECT_DIR"
-
+          gradle wrapper
           chmod +x gradlew
+
+      - name: Build APK
+        working-directory: project/OrderSlipAndroid
+        run: |
           ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: OrderSlip-APK
-          path: project/**/app/build/outputs/apk/debug/app-debug.apk
+          path: project/OrderSlipAndroid/app/build/outputs/apk/debug/app-debug.apk
