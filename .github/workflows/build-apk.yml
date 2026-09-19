@@ -13,7 +13,14 @@ jobs:
 
       - name: Extract Android project
         run: |
-          unzip -o OrderSlipAndroid_AutoUpdate_Fixed.zip -d project
+          ZIP="$(find . -maxdepth 3 -iname 'OrderSlipAndroid*.zip' | head -n 1)"
+          if [ -z "$ZIP" ]; then
+            echo "Zip file not found in repo"
+            ls -R | head -50
+            exit 1
+          fi
+          echo "Using: $ZIP"
+          unzip -o "$ZIP" -d project
 
       - name: Set up Java
         uses: actions/setup-java@v4
