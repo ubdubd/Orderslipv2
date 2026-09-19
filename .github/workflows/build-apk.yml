@@ -35,6 +35,20 @@ jobs:
           gradle wrapper --gradle-version 8.9
           chmod +x gradlew
 
+      - name: Enable AndroidX
+        working-directory: project/OrderSlipAndroid
+        run: |
+          touch gradle.properties
+          echo "" >> gradle.properties
+          grep -q "android.useAndroidX" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
+          cat gradle.properties
+
+      - name: Set compileSdk 35
+        working-directory: project/OrderSlipAndroid
+        run: |
+          sed -i -E 's/compileSdk(Version)?[ =]+[0-9]+/compileSdk 35/' app/build.gradle
+          grep -n "compileSdk" app/build.gradle
+
       - name: Use fixed signing key
         run: |
           if [ -f debug.keystore ]; then
